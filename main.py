@@ -1,5 +1,16 @@
 import pygame
 import pygame_gui
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+from torchvision import datasets
+from torchvision.transforms import Compose, ToTensor, Resize, CenterCrop, Normalize
+import numpy
+from FoodNeuralNetwork import FoodNeuralNetwork
+
+
+def validColor(value): #returns if a string is a valid color representation (a number between 0 and 255)
+    return value.isnumeric() and int(value) >= 0 and int(value) <= 255
 
 def between(a,b,c): #return if a is between b and c
     return a >= b and a <= c
@@ -10,7 +21,8 @@ def eraser():
     color[2] = 200
 
 def setColor():
-    if redInput.get_text().isnumeric() and greenInput.get_text().isnumeric() and blueInput.get_text().isnumeric() and between(int(redInput.get_text()), 0, 255) and between(int(greenInput.get_text()), 0, 255) and between(int(blueInput.get_text()), 0, 255):
+    #if redInput.get_text().isnumeric() and greenInput.get_text().isnumeric() and blueInput.get_text().isnumeric() and between(int(redInput.get_text()), 0, 255) and between(int(greenInput.get_text()), 0, 255) and between(int(blueInput.get_text()), 0, 255):
+    if validColor(redInput.get_text()) and validColor(greenInput.get_text()) and validColor(blueInput.get_text()):
             color[0] = int(redInput.get_text())
             color[1] = int(greenInput.get_text())
             color[2] = int(blueInput.get_text())
@@ -21,6 +33,15 @@ def setColor():
 
 def confirm(): #confirms the current drawing
     print("Confirm function called")
+
+    with torch.no_grad(): # as we are only using the model, we don't need to back-propagate
+        drawing = torch.tensor(canvas) # convert cavnas (current drawing) to tensor
+        rawPrediction = model(drawing) # predict label based on drawing
+        predictionProbabilities = nn.Softmax(dim=1)(rawPrediction) # gets the probability for each class
+        prediction = predictionProbabilities.argmax(1) # pick the highest probability class as the final guess
+
+        print(f"Food: {prediction}") # displays prediction
+
 
 def reset(): #resets the canvas
     for i in range(numberOfPixels):
@@ -79,11 +100,107 @@ def drawWindow(window):
 
     window.blit(eraserIcon, (windowSideLength + 75, 225))
 
+# Initialize ML stuff
+
+transform = Compose([
+    Resize(256),                # Resize smaller edge to 256 while preserving aspect ratio
+    CenterCrop(224),            # Crop to 224x224
+    ToTensor(),                 # Convert image to tensor
+    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalizing to ImageNet stats
+])
+
+# Download training data from open datasets.
+training_data = datasets.Food101(
+    root="data",
+    split="train",
+    download=False,
+    transform=transform,
+)
+
+# Download test data from open datasets.
+test_data = datasets.Food101(
+    root="data",
+    split="test",
+    download=False,
+    transform=transform,
+)
+
+# Hyperparameters
+batch_size = 64
+learning_rate = 0.001
+epochs = 5
+
+# Create data loaders (load training and testing data).
+train_dataloader = DataLoader(training_data, batch_size=batch_size)
+test_dataloader = DataLoader(test_data, batch_size=batch_size)
+
+
+# Define device on which to run model
+device = "cpu"
+
+# Create Model
+model = FoodNeuralNetwork().to(device)
+
+
+# Define Loss Function and Optimizer
+lossFunction = nn.CrossEntropyLoss()
+optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+
+# Training Function
+def train(dataloader, model, loss_fn, optimizer):
+    size = len(dataloader.dataset)
+    model.train()
+    for batch, (X, y) in enumerate(dataloader):
+        X, y = X.to(device), y.to(device)
+
+        # Compute prediction error
+        pred = model(X)
+        loss = loss_fn(pred, y)
+
+        # Backpropagation
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+        if batch % 100 == 0:
+            loss, current = loss.item(), (batch + 1) * len(X)
+            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+
+# Evaluate Model Functiom
+def test(dataloader, model, loss_fn):
+    size = len(dataloader.dataset)
+    num_batches = len(dataloader)
+    model.eval()
+    test_loss, correct = 0, 0
+    with torch.no_grad():
+        for X, y in dataloader:
+            X, y = X.to(device), y.to(device)
+            pred = model(X)
+            test_loss += loss_fn(pred, y).item()
+            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+    test_loss /= num_batches
+    correct /= size
+    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
+
+
+# Train and Evaluate Model
+
+for t in range(epochs):
+    print(f"Epoch {t+1}\n-------------------------------")
+    train(train_dataloader, model, lossFunction, optimizer)
+    test(test_dataloader, model, lossFunction)
+print("Done!")
+
+# Save Model
+torch.save(model.state_dict(), "model.pth")
+print("Saved PyTorch Model State to model.pth")
+
+
 
 color = [0,0,0]
 windowSideLength = 500 #window is a square so this is both length and width
 sidePanelWidth = 150
-numberOfPixels = 20 #the number of pixels in each dimension (ex. 28 means the screen is 28x28 pixels)
+numberOfPixels = 25 #the number of pixels in each dimension (ex. 28 means the screen is 28x28 pixels)
 sizeOfPixel = windowSideLength / numberOfPixels
 
 canvas = [[(200,200,200)] * numberOfPixels for _ in range(numberOfPixels)] #create array to store drawing
@@ -131,9 +248,9 @@ while running:
             if mx < windowSideLength: #if click is on the canvas
                 mouseDrawing = True
 
-        if event.type == pygame.MOUSEBUTTONDOWN:
             if mx > 0 and mx < 500 and my > 0 and my < 500: #check if mouse is within canvas
                 canvas[int(mx / sizeOfPixel)][int(my / sizeOfPixel)] = color.copy()
+
 
         if mouseDrawing and event.type == pygame.MOUSEMOTION: #if the user is drawing, and moves the mouse
             mx, my = pygame.mouse.get_pos()
