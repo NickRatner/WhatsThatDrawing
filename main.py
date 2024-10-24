@@ -69,17 +69,20 @@ def setColor():
             pickingColor = False
 
 def confirm(): #confirms the current drawing
-    print("Confirm function called")
-
     canvas_array = numpy.array(canvas)  # This creates a (height, width, 3) NumPy array
+    canvas_array = canvas_array / 255.0 # normalize all values
+
     drawing = torch.tensor(canvas_array,dtype=torch.float32) # Convert current drawing to tensor
     drawing = drawing.permute(2, 0, 1)  # Changes from (height, width, 3) to (3, height, width)
 
     resize_transform = Resize((224, 224)) # Define resize transformation
     drawing_resized = resize_transform(drawing.unsqueeze(0))  # Add batch dimension and resize, as resize expects to know how many images are being inputted
 
+    normalize_transform = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    drawing_normalized = normalize_transform(drawing_resized)  # Apply normalization
+
     with torch.no_grad(): # as we are only using the model, we don't need to back-propagate
-        rawPrediction = model(drawing_resized) # predict label based on drawing
+        rawPrediction = model(drawing_normalized) # predict label based on drawing
         predictionProbabilities = nn.Softmax(dim=1)(rawPrediction) # gets the probability for each class
         prediction = predictionProbabilities.argmax(1) # pick the highest probability class as the final guess
 
@@ -173,7 +176,7 @@ test_data = datasets.Food101(
 # Hyperparameters
 batch_size = 64
 learning_rate = 0.01
-epochs = 7
+epochs = 4
 
 # Create data loaders (load training and testing data).
 train_dataloader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
@@ -186,7 +189,7 @@ device = "cpu"
 # Create Model
 #model = FoodNeuralNetwork().to(device)
 model = FoodConvNeuralNetwork().to(device)
-
+model.load_state_dict(torch.load("model.pth", weights_only=True))
 
 # Define Loss Function and Optimizer
 lossFunction = nn.CrossEntropyLoss()
@@ -232,6 +235,7 @@ def test(dataloader, model, loss_fn):
 
 
 # Load Model (if already exists)
+#if False:
 if os.path.exists("model.pth"):
     model.load_state_dict(torch.load("model.pth", weights_only=True))
 else:

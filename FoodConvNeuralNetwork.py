@@ -7,13 +7,13 @@ class FoodConvNeuralNetwork(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        self.conv1 = nn.Conv2d(3, 12, 11) # Data has 3 channels (RGB), 12 output features, 10x10 kernel
-        # 224 pixels - 11 pixels = 213 + 1 = 214. new shape = [12, 214, 214]
-        self.pool = nn.MaxPool2d(2, 2) # takes 2x2 area and extracts it into 1 pixel (which will divide the dimensions of the image by 2: [12, 107, 107]
+        self.conv1 = nn.Conv2d(3, 12, 5) # Data has 3 channels (RGB), 12 output features, 5 kernel
+        # 224 pixels - 5 pixels = 219 + 1 = 220. new shape = [12, 220, 220]
+        self.pool = nn.MaxPool2d(2, 2) # takes 2x2 area and extracts it into 1 pixel (which will divide the dimensions of the image by 2: [12, 110, 110]
 
-        self.conv2 = nn.Conv2d(12, 24, 10) # (107-10)+1 = (24, 98, 98) --> maxPooling: [24, 49, 49] --> flatten: [24 * 49 * 49]
+        self.conv2 = nn.Conv2d(12, 24, 5) # (110-5)+1 = (24, 106, 106) --> maxPooling: [24, 53, 53] --> flatten: [24 * 53 * 53]
 
-        self.fullyConnected1 = nn.Linear(24 * 49 * 49, 120)
+        self.fullyConnected1 = nn.Linear(24 * 53 * 53, 120)
         self.fullyConnected2 = nn.Linear(120, 110)
         self.output = nn.Linear(110, 101)
 
